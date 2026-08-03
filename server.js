@@ -29,6 +29,25 @@ function parseForm(req) {
   });
 }
 
+async function callNvidia(url, body) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const nvidiaRes = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${NVIDIA_API_KEY}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (nvidiaRes.status < 500 || attempt === 2) return nvidiaRes;
+
+    console.warn(`[NVIDIA RETRY] status ${nvidiaRes.status}, tentativa ${attempt}`);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+}
+
 app.get("/", (req, res) => {
   res.json({ status: "ok", genUrl: GEN_URL, editUrl: EDIT_URL });
 });
@@ -47,35 +66,19 @@ app.post("/generate", async (req, res) => {
     let nvidiaRes;
     if (hasImage) {
       const dataUri = `data:${files.image.mimeType || "image/jpeg"};base64,${files.image.buffer.toString("base64")}`;
-      nvidiaRes = await fetch(EDIT_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Authorization: `Bearer ${NVIDIA_API_KEY}`,
-        },
-        body: JSON.stringify({
-          prompt,
-          image: dataUri,
-          samples: 1,
-          seed: 0,
-          steps: 30,
-        }),
+      nvidiaRes = await callNvidia(EDIT_URL, {
+        prompt,
+        image: dataUri,
+        samples: 1,
+        seed: 0,
+        steps: 30,
       });
     } else {
-      nvidiaRes = await fetch(GEN_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          Authorization: `Bearer ${NVIDIA_API_KEY}`,
-        },
-        body: JSON.stringify({
-          prompt,
-          samples: 1,
-          seed: 0,
-          steps: 4,
-        }),
+      nvidiaRes = await callNvidia(GEN_URL, {
+        prompt,
+        samples: 1,
+        seed: 0,
+        steps: 4,
       });
     }
 
@@ -105,11 +108,13 @@ app.post("/generate", async (req, res) => {
     }
 
     // formato NIM: { artifacts: [{ base64: "..." }] }
-    const b64 = data?.artifacts?.[0]?.base64 || data?.data?.[0]?.b64_json;
-    if (!b64) {
-      console.error("[NVIDIA NO-IMAGE]", JSON.stringify(data).slice(0, 500));
-      return res.status(500).json({
-        error: "A imagem sumiu antes de chegar até você. Tenta de novo!",
+    const artifact = data?.artifacts?.[0];
+    const b64 = artifact?.base64 || data?.data?.[0]?.b64_json;
+
+    if (artifact?.finishReason === "CONTENT_FILTERED" || !b64) {
+      console.error("[NVIDIA CONTENT_FILTERED]", JSON.stringify(data).slice(0, 500));
+      return res.status(422).json({
+        error: "O filtro de segurança da NVIDIA bloqueou esse prompt. Tenta reformular a descrição.",
         nvidia_details: data,
       });
     }
