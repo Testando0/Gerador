@@ -8,10 +8,8 @@ const app = express();
 app.use(cors());
 
 const NVIDIA_API_KEY = process.env.NVIDIA_API_KEY;
-const GEN_URL = "https://integrate.api.nvidia.com/v1/images/generations";
-const EDIT_URL = "https://integrate.api.nvidia.com/v1/images/edits";
-const GEN_MODEL = process.env.NVIDIA_GEN_MODEL || "black-forest-labs/flux.2-klein-4b";
-const EDIT_MODEL = process.env.NVIDIA_EDIT_MODEL || "black-forest-labs/flux.1-kontext-dev";
+const GEN_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.2-klein-4b";
+const EDIT_URL = "https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-kontext-dev";
 
 if (!NVIDIA_API_KEY) console.warn("[WARN] NVIDIA_API_KEY não definida.");
 
@@ -32,7 +30,7 @@ function parseForm(req) {
 }
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", genModel: GEN_MODEL, editModel: EDIT_MODEL });
+  res.json({ status: "ok", genUrl: GEN_URL, editUrl: EDIT_URL });
 });
 
 app.post("/generate", async (req, res) => {
@@ -57,10 +55,11 @@ app.post("/generate", async (req, res) => {
           Authorization: `Bearer ${NVIDIA_API_KEY}`,
         },
         body: JSON.stringify({
-          model: EDIT_MODEL,
           prompt,
           image: dataUri,
-          response_format: "b64_json",
+          samples: 1,
+          seed: 0,
+          steps: 30,
         }),
       });
     } else {
@@ -72,10 +71,10 @@ app.post("/generate", async (req, res) => {
           Authorization: `Bearer ${NVIDIA_API_KEY}`,
         },
         body: JSON.stringify({
-          model: GEN_MODEL,
           prompt,
-          n: 1,
-          response_format: "b64_json",
+          samples: 1,
+          seed: 0,
+          steps: 4,
         }),
       });
     }
@@ -105,9 +104,14 @@ app.post("/generate", async (req, res) => {
       });
     }
 
-    const b64 = data?.data?.[0]?.b64_json;
+    // formato NIM: { artifacts: [{ base64: "..." }] }
+    const b64 = data?.artifacts?.[0]?.base64 || data?.data?.[0]?.b64_json;
     if (!b64) {
-      return res.status(500).json({ error: "A imagem sumiu antes de chegar até você. Tenta de novo!" });
+      console.error("[NVIDIA NO-IMAGE]", JSON.stringify(data).slice(0, 500));
+      return res.status(500).json({
+        error: "A imagem sumiu antes de chegar até você. Tenta de novo!",
+        nvidia_details: data,
+      });
     }
 
     const raw = Buffer.from(b64, "base64");
