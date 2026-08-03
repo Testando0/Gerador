@@ -35,7 +35,7 @@ app.get("/", (req, res) => {
   res.json({ status: "ok", genModel: GEN_MODEL, editModel: EDIT_MODEL });
 });
 
-app.post("/ai/gptimage", async (req, res) => {
+app.post("/generate", async (req, res) => {
   try {
     const { fields, files } = await parseForm(req);
     const prompt = (fields.param || fields.prompt || "").trim();
@@ -83,11 +83,15 @@ app.post("/ai/gptimage", async (req, res) => {
     const data = await nvidiaRes.json();
 
     if (!nvidiaRes.ok) {
-      console.error("[NVIDIA ERROR]", data);
+      console.error("[NVIDIA ERROR]", nvidiaRes.status, JSON.stringify(data));
       if (nvidiaRes.status === 429) {
         return res.status(429).json({ error: "Estou com muita demanda agora, precisei parar pra respirar. Aguarda um pouquinho e tenta de novo? 🖤" });
       }
-      return res.status(500).json({ error: "Não consegui criar a imagem desta vez. Pode tentar de novo?" });
+      return res.status(500).json({
+        error: "Não consegui criar a imagem desta vez. Pode tentar de novo?",
+        nvidia_status: nvidiaRes.status,
+        nvidia_details: data,
+      });
     }
 
     const b64 = data?.data?.[0]?.b64_json;
