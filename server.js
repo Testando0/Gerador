@@ -80,7 +80,18 @@ app.post("/generate", async (req, res) => {
       });
     }
 
-    const data = await nvidiaRes.json();
+    const rawText = await nvidiaRes.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      console.error("[NVIDIA NON-JSON]", nvidiaRes.status, rawText.slice(0, 500));
+      return res.status(500).json({
+        error: "Não consegui criar a imagem desta vez. Pode tentar de novo?",
+        nvidia_status: nvidiaRes.status,
+        nvidia_raw: rawText.slice(0, 500),
+      });
+    }
 
     if (!nvidiaRes.ok) {
       console.error("[NVIDIA ERROR]", nvidiaRes.status, JSON.stringify(data));
@@ -117,11 +128,14 @@ app.post("/generate", async (req, res) => {
     res.setHeader("Cache-Control", "no-cache");
     return res.status(200).send(final);
   } catch (err) {
-    console.error("[GENERATE ERROR]", err.message);
+    console.error("[GENERATE ERROR]", err.message, err.stack);
     if (err.type === "request.aborted" || err.message?.includes("timeout")) {
       return res.status(504).json({ error: "Fiquei tanto tempo pensando que me perdi... Tenta de novo com uma ideia mais simples?" });
     }
-    return res.status(500).json({ error: "Não consegui criar a imagem desta vez. Pode tentar de novo?" });
+    return res.status(500).json({
+      error: "Não consegui criar a imagem desta vez. Pode tentar de novo?",
+      debug: err.message,
+    });
   }
 });
 
